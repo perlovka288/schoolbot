@@ -1,0 +1,7 @@
+.env
+credentials.json
+tokens/*.json
+tmp/
+data/books/*.pdf
+__pycache__/
+*.pyc
