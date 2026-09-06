@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: study-bot
+    runtime: python
+    plan: starter
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    disk:
+      name: study-bot-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: DATA_ROOT
+        value: /var/data
+      - key: GOOGLE_CREDENTIALS_PATH
+        value: /etc/secrets/credentials.json
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OAUTH_REDIRECT_BASE_URL
+        sync: false
+      - key: SYNC_INTERVAL_SECONDS
+        value: "60"

@@ -2,8 +2,9 @@
 Конфигурация проекта.
 
 Секреты (токен бота, ключ Gemini) НЕ хранятся в коде — они читаются
-из переменных окружения / файла .env. Создайте файл .env рядом с этим
-файлом (по образцу .env.example) и заполните его реальными значениями.
+из переменных окружения / файла .env. Локально создайте файл .env рядом
+с этим файлом (по образцу .env.example). На хостинге (Render и т.п.)
+эти же переменные задаются в панели управления — .env там не нужен.
 """
 
 import os
@@ -11,9 +12,19 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Загружаем переменные окружения из .env, если он есть
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
+
+# ---------------------------------------------------------------------------
+# Где хранятся ИЗМЕНЯЕМЫЕ данные (токены пользователей, состояние синхрони-
+# зации, скачанные учебники и т.п.)
+# ---------------------------------------------------------------------------
+# Локально — просто рядом с проектом. На хостинге с постоянным диском
+# (например, Render Persistent Disk) задайте переменную DATA_ROOT равной
+# пути монтирования диска (например, /var/data) — тогда все эти файлы
+# переживут редеплой и перезапуск, а не потеряются вместе с контейнером.
+DATA_ROOT: Path = Path(os.getenv("DATA_ROOT", str(BASE_DIR)))
+DATA_ROOT.mkdir(parents=True, exist_ok=True)
 
 # ---------------------------------------------------------------------------
 # Секреты
@@ -35,6 +46,10 @@ if not GEMINI_API_KEY:
 # ---------------------------------------------------------------------------
 # Google OAuth / Classroom
 # ---------------------------------------------------------------------------
+# GOOGLE_CREDENTIALS_PATH может быть как относительным именем файла рядом
+# с проектом (локально), так и абсолютным путём — например, путём к
+# Render Secret File (/etc/secrets/credentials.json). Абсолютный путь
+# всегда побеждает relative join ниже.
 GOOGLE_CREDENTIALS_FILE: Path = BASE_DIR / os.getenv(
     "GOOGLE_CREDENTIALS_PATH", "credentials.json"
 )
@@ -44,20 +59,21 @@ GOOGLE_CREDENTIALS_FILE: Path = BASE_DIR / os.getenv(
 # ---------------------------------------------------------------------------
 # Раньше redirect_uri был жёстко "http://localhost" — там никто не слушал,
 # и браузер зависал в бесконечной загрузке, а код приходилось копировать
-# руками. Теперь на этом порту реально поднят локальный веб-сервер
+# руками. Теперь на этом порту реально поднят веб-сервер
 # (services/oauth_server.py), который сам принимает код и сохраняет токен.
 #
-# Пока бот работает локально на вашем компьютере — ничего менять не нужно,
-# всё работает "из коробки" (браузер и бот на одной машине).
+# Локально — ничего менять не нужно, всё работает "из коробки" (браузер
+# и бот на одной машине) или через туннель (ngrok и т.п.).
 #
-# Когда задеплоите бота на хостинг с публичным адресом (например, Render
-# Web Service) — задайте в .env:
-#   OAUTH_REDIRECT_BASE_URL=https://ваш-адрес.onrender.com
-# и пропишите ТОЧНО ТАКОЙ ЖЕ адрес + "/oauth/callback" как Authorized
-# redirect URI в Google Cloud Console (тип OAuth-клиента должен быть
-# "Web application", не "Desktop app").
+# На Render (Web Service) порт задаёт сама платформа через переменную
+# PORT — мы её подхватываем автоматически. Останется только задать
+# OAUTH_REDIRECT_BASE_URL = публичный адрес сервиса и прописать тот же
+# адрес + "/oauth/callback" как Authorized redirect URI в Google Cloud
+# Console (тип OAuth-клиента — "Web application", не "Desktop app").
 OAUTH_CALLBACK_HOST: str = os.getenv("OAUTH_CALLBACK_HOST", "0.0.0.0")
-OAUTH_CALLBACK_PORT: int = int(os.getenv("OAUTH_CALLBACK_PORT", "8765"))
+OAUTH_CALLBACK_PORT: int = int(
+    os.getenv("PORT", os.getenv("OAUTH_CALLBACK_PORT", "8765"))
+)
 OAUTH_REDIRECT_BASE_URL: str = os.getenv(
     "OAUTH_REDIRECT_BASE_URL", f"http://localhost:{OAUTH_CALLBACK_PORT}"
 )
@@ -69,7 +85,7 @@ GOOGLE_SCOPES: list[str] = [
     "https://www.googleapis.com/auth/drive.readonly",
 ]
 
-TOKENS_DIR: Path = BASE_DIR / "tokens"
+TOKENS_DIR: Path = DATA_ROOT / "tokens"
 TOKENS_DIR.mkdir(exist_ok=True)
 
 # ---------------------------------------------------------------------------
@@ -77,7 +93,7 @@ TOKENS_DIR.mkdir(exist_ok=True)
 # ---------------------------------------------------------------------------
 # Папка, где хранится "последнее известное" множество курсов каждого
 # пользователя — чтобы понимать, какие курсы новые.
-SYNC_STATE_DIR: Path = BASE_DIR / "data" / "sync_state"
+SYNC_STATE_DIR: Path = DATA_ROOT / "data" / "sync_state"
 SYNC_STATE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Как часто (в секундах) опрашивать Classroom API в фоне на предмет новых
@@ -104,7 +120,7 @@ SYSTEM_PROMPT: str = (
 # ---------------------------------------------------------------------------
 # Книги (RAG-контекст)
 # ---------------------------------------------------------------------------
-BOOKS_DIR: Path = BASE_DIR / "data" / "books"
+BOOKS_DIR: Path = DATA_ROOT / "data" / "books"
 BOOKS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Максимум символов текста учебников, которые отправляем в модель как контекст
@@ -113,12 +129,12 @@ MAX_BOOK_CONTEXT_CHARS: int = 15000
 # ---------------------------------------------------------------------------
 # Генератор тетрадного листа
 # ---------------------------------------------------------------------------
-FONTS_DIR: Path = BASE_DIR / "data" / "fonts"
+FONTS_DIR: Path = DATA_ROOT / "data" / "fonts"
 FONTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Путь к рукописному TTF-шрифту, если пользователь его положит в data/fonts
 HANDWRITING_FONT_PATH: Path = FONTS_DIR / "handwriting.ttf"
 
 # Временная папка для скачанных вложений / сгенерированных изображений
-TMP_DIR: Path = BASE_DIR / "tmp"
+TMP_DIR: Path = DATA_ROOT / "tmp"
 TMP_DIR.mkdir(exist_ok=True)
