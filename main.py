@@ -50,6 +50,9 @@ async def _start_web_app(bot: Bot, dp: Dispatcher) -> web.AppRunner:
     включён вебхук, эндпоинт для апдейтов Telegram."""
 
     async def health(request: web.Request) -> web.Response:
+        # Лёгкий health-check: сюда стучится Render при деплое, и сюда же
+        # можно направить внешний пингер, чтобы не давать сервису спать
+        # слишком долго (если это вообще нужно) — см. README.
         return web.Response(text="ok")
 
     app = web.Application()
@@ -83,11 +86,14 @@ async def main() -> None:
     )
     dp = Dispatcher(storage=MemoryStorage())
 
+    # Порядок важен: более специфичные роутеры (с FSM-состояниями) регистрируем
+    # раньше, чтобы они успевали перехватить сообщение в нужном состоянии.
     dp.include_router(auth.router)
     dp.include_router(solver.router)
     dp.include_router(classroom.router)
     dp.include_router(start.router)
 
+    # Сканируем папку с учебниками при старте
     books_count = gemini_service.refresh_books_cache()
     logger.info("Найдено учебников в data/books: %d", books_count)
 
@@ -100,8 +106,16 @@ async def main() -> None:
             allowed_updates=dp.resolve_used_update_types(),
         )
         logger.info("Бот работает через webhook: %s", config.WEBHOOK_URL)
+        logger.info(
+            "Синхронизация Classroom — через /cron/sync. Настройте внешний "
+            "крон (cron-job.org и т.п.), см. README."
+        )
+        # Бот больше не занимает поток на polling — просто ждём вечно,
+        # пока не придёт сигнал остановки. Всю работу делают обработчики
+        # aiohttp-приложения (вебхук, oauth callback, cron).
         await asyncio.Event().wait()
     else:
+        # Локальная разработка: обычный polling + фоновый цикл синхронизации.
         asyncio.create_task(sync_service.run_sync_loop(bot))
         logger.info("Бот запускается в режиме polling…")
         await bot.delete_webhook(drop_pending_updates=True)

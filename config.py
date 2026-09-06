@@ -89,6 +89,29 @@ TOKENS_DIR: Path = DATA_ROOT / "tokens"
 TOKENS_DIR.mkdir(exist_ok=True)
 
 # ---------------------------------------------------------------------------
+# Приём апдейтов Telegram: webhook вместо long polling
+# ---------------------------------------------------------------------------
+# Polling держит с Telegram постоянное открытое соединение и крутится
+# 24/7 — на бесплатных хостингах это либо не даёт процессу "уснуть", либо
+# просто жжёт часы тарифа впустую. Webhook вместо этого — обычный HTTP-
+# эндпоинт: Telegram сам стучится к нам, когда есть новое сообщение,
+# а всё остальное время сервис может простаивать/спать.
+#
+# USE_WEBHOOK=true  — включить режим webhook (продакшн, например Render).
+# USE_WEBHOOK=false — обычный polling (по умолчанию, удобно для локальной
+#                     разработки: не нужен публичный адрес).
+USE_WEBHOOK: bool = os.getenv("USE_WEBHOOK", "false").strip().lower() in (
+    "1", "true", "yes", "on",
+)
+
+# Секретный сегмент пути вебхука — чтобы никто посторонний не мог слать
+# на этот адрес поддельные апдейты, зная только домен сервиса. Если явно
+# не задан, используется сам токен бота (он и так секретный).
+WEBHOOK_SECRET: str = os.getenv("WEBHOOK_SECRET", TELEGRAM_BOT_TOKEN)
+WEBHOOK_PATH: str = f"/webhook/{WEBHOOK_SECRET}"
+WEBHOOK_URL: str = f"{OAUTH_REDIRECT_BASE_URL}{WEBHOOK_PATH}"
+
+# ---------------------------------------------------------------------------
 # Фоновая синхронизация курсов
 # ---------------------------------------------------------------------------
 # Папка, где хранится "последнее известное" множество курсов каждого
@@ -97,8 +120,25 @@ SYNC_STATE_DIR: Path = DATA_ROOT / "data" / "sync_state"
 SYNC_STATE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Как часто (в секундах) опрашивать Classroom API в фоне на предмет новых
-# курсов. Можно переопределить через .env (SYNC_INTERVAL_SECONDS=30 и т.д.).
+# курсов. Используется только в режиме polling (USE_WEBHOOK=false), где
+# синхронизация всё ещё крутится встроенным циклом внутри процесса.
+# Можно переопределить через .env (SYNC_INTERVAL_SECONDS=30 и т.д.).
 SYNC_INTERVAL_SECONDS: int = int(os.getenv("SYNC_INTERVAL_SECONDS", "60"))
+
+# ---------------------------------------------------------------------------
+# Заглушка для внешнего крона (эндпоинт GET /cron/sync)
+# ---------------------------------------------------------------------------
+# В режиме webhook (USE_WEBHOOK=true) встроенный бесконечный цикл
+# синхронизации не запускается — иначе он сам не давал бы бесплатному
+# сервису "засыпать" между запросами, и весь смысл вебхука терялся бы.
+# Вместо этого проверку Classroom по всем пользователям запускает один
+# HTTP-запрос на /cron/sync — его нужно дёргать снаружи по расписанию,
+# например бесплатным cron-job.org / UptimeRobot / GitHub Actions cron
+# раз в SYNC_INTERVAL_SECONDS. CRON_SECRET — простая защита эндпоинта от
+# посторонних вызовов (передаётся как ?key=... или заголовком X-Cron-Key).
+# Если оставить пустым — эндпоинт открыт для всех (годится, если адрес
+# сервиса никому не известен, но лучше задать секрет).
+CRON_SECRET: str = os.getenv("CRON_SECRET", "")
 
 # ---------------------------------------------------------------------------
 # Gemini
@@ -138,10 +178,3 @@ HANDWRITING_FONT_PATH: Path = FONTS_DIR / "handwriting.ttf"
 # Временная папка для скачанных вложений / сгенерированных изображений
 TMP_DIR: Path = DATA_ROOT / "tmp"
 TMP_DIR.mkdir(exist_ok=True)
-USE_WEBHOOK: bool = os.getenv("USE_WEBHOOK", "false").strip().lower() in (
-    "1", "true", "yes", "on",
-)
-WEBHOOK_SECRET: str = os.getenv("WEBHOOK_SECRET", TELEGRAM_BOT_TOKEN)
-WEBHOOK_PATH: str = f"/webhook/{WEBHOOK_SECRET}"
-WEBHOOK_URL: str = f"{OAUTH_REDIRECT_BASE_URL}{WEBHOOK_PATH}"
-CRON_SECRET: str = os.getenv("CRON_SECRET", "")

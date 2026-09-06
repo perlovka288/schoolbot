@@ -37,11 +37,20 @@ pip install -r requirements.txt
    GEMINI_API_KEY=...
    ```
 2. Создайте OAuth-клиент в [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
-   типа **Desktop App**, скачайте JSON и положите его в корень проекта как
-   `credentials.json`.
+   типа **Web application** (НЕ Desktop app — боту нужен redirect_uri на
+   его собственный веб-сервер), скачайте JSON и положите его в корень
+   проекта как `credentials.json`.
+   - В **Authorized redirect URIs** добавьте адрес вида
+     `https://ваш-адрес.onrender.com/oauth/callback` (локально —
+     `http://localhost:8765/oauth/callback`).
    - Включите API: **Google Classroom API** и **Google Drive API**.
    - Добавьте себя (и других учеников) в тестовые пользователи OAuth
      consent screen, пока приложение не прошло верификацию Google.
+   - **На Render** файл `credentials.json` нельзя просто закоммитить —
+     загрузите его как **Secret File**: Dashboard → сервис → Environment →
+     Secret Files → путь `/etc/secrets/credentials.json` (этот путь уже
+     прописан в `render.yaml` через `GOOGLE_CREDENTIALS_PATH`). Именно
+     отсутствие этого шага даёт ошибку «Файл credentials.json не найден».
 3. (Опционально) Положите PDF-учебники в `data/books/`.
 4. (Опционально) Положите рукописный TTF-шрифт в `data/fonts/handwriting.ttf`
    — иначе будет использован обычный аккуратный шрифт.
@@ -51,6 +60,48 @@ pip install -r requirements.txt
 ```bash
 python main.py
 ```
+
+## Polling vs Webhook
+
+По умолчанию (`USE_WEBHOOK=false`) бот работает через **long polling** —
+сам постоянно спрашивает Telegram, нет ли новых сообщений. Это удобно
+локально (не нужен публичный адрес), но на хостинге с ограниченными
+бесплатными часами держит процесс запущенным 24/7 и тратит их впустую.
+
+На проде (Render и т.п.) включайте **webhook** (`USE_WEBHOOK=true`):
+Telegram сам присылает апдейты HTTP-запросом на `/webhook/<секрет>`,
+процессу не нужно ничего постоянно опрашивать, и сервис может
+простаивать/спать между запросами.
+
+Раньше в этом же процессе крутился бесконечный фоновый цикл
+(`sync_service.run_sync_loop`), который раз в `SYNC_INTERVAL_SECONDS`
+опрашивал Classroom API на предмет новых курсов у всех пользователей.
+При включённом вебхуке такой цикл сам по себе не давал бы сервису
+"засыпать" — и вся экономия часов терялась. Поэтому в режиме вебхука
+эта проверка вынесена в отдельный лёгкий HTTP-эндпоинт-заглушку:
+
+```
+GET {OAUTH_REDIRECT_BASE_URL}/cron/sync?key=CRON_SECRET
+```
+
+Его нужно дёргать **снаружи**, по расписанию, любым бесплатным внешним
+кроном — например:
+
+- [cron-job.org](https://cron-job.org) — бесплатно, по расписанию (раз в
+  минуту и чаще);
+- UptimeRobot (мониторинг + заодно вызов по интервалу);
+- GitHub Actions с `schedule:` в workflow;
+- Render Cron Job (платный план Render).
+
+Эндпоинт возвращает JSON `{"ok": true, "checked_users": N}` и не требует
+браузера — подходит для любого cron-сервиса, умеющего дёргать URL по
+расписанию. `CRON_SECRET` — необязательный, но рекомендуемый пароль
+(передаётся параметром `?key=...` или заголовком `X-Cron-Key`), чтобы
+эндпоинт не мог дёрнуть кто попало.
+
+Если хотите обойтись без внешнего крона — оставьте `USE_WEBHOOK=false`
+(polling + встроенный цикл), это по-прежнему работает как раньше,
+просто занимает больше "часов" на бесплатных тарифах.
 
 ## Как проходит авторизация Google (важно)
 
@@ -82,7 +133,10 @@ study_bot/
 ├── services/
 │   ├── google_service.py   # Google Classroom & Drive API
 │   ├── gemini_service.py   # Анализ заданий, поиск по книгам, решение
-│   └── notebook_render.py  # Генерация фото-ответа на листе в клетку
+│   ├── notebook_render.py  # Генерация фото-ответа на листе в клетку
+│   ├── oauth_server.py     # Маршрут /oauth/callback общего веб-приложения
+│   ├── cron_server.py      # Заглушка для крона: GET /cron/sync
+│   └── sync_service.py     # Проверка новых курсов Classroom (once/loop)
 ├── data/
 │   ├── books/               # PDF-учебники (кладите сюда сами)
 │   └── fonts/                # handwriting.ttf (опционально)

@@ -2,17 +2,11 @@ services:
   - type: web
     name: study-bot
     runtime: python
-    plan: starter
+    plan: free
     region: frankfurt
     buildCommand: pip install -r requirements.txt
     startCommand: python main.py
-    disk:
-      name: study-bot-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
-      - key: DATA_ROOT
-        value: /var/data
       - key: GOOGLE_CREDENTIALS_PATH
         value: /etc/secrets/credentials.json
       - key: TELEGRAM_BOT_TOKEN
@@ -23,3 +17,15 @@ services:
         sync: false
       - key: SYNC_INTERVAL_SECONDS
         value: "60"
+      # Вебхук вместо polling — не держит соединение с Telegram открытым
+      # постоянно, сервис может простаивать между запросами и не тратит
+      # часы бесплатного тарифа впустую.
+      - key: USE_WEBHOOK
+        value: "true"
+      # Автогенерируемый Render'ом секрет пути вебхука.
+      - key: WEBHOOK_SECRET
+        generateValue: true
+      # Автогенерируемый пароль для эндпоинта /cron/sync (см. README —
+      # его нужно прописать в настройках внешнего крона).
+      - key: CRON_SECRET
+        generateValue: true

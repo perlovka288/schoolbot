@@ -53,9 +53,13 @@ def build_auth_flow(state: str | None = None) -> Flow:
     """Создаёт объект Flow на основе credentials.json (Desktop App)."""
     if not config.GOOGLE_CREDENTIALS_FILE.exists():
         raise GoogleAuthError(
-            "Файл credentials.json не найден рядом с проектом. "
-            "Скачайте его в Google Cloud Console (OAuth client -> Desktop app) "
-            "и положите в корень проекта."
+            "Файл credentials.json не найден. Скачайте его в Google Cloud "
+            "Console (Credentials -> Create OAuth client ID -> тип "
+            "«Web application», НЕ «Desktop app» — иначе redirect_uri не "
+            "совпадёт с адресом бота). В Authorized redirect URIs добавьте "
+            f"{config.OAUTH_REDIRECT_URI}. На Render загрузите файл как "
+            "Secret File (Environment -> Secret Files, путь "
+            "/etc/secrets/credentials.json — уже прописан в render.yaml)."
         )
     flow = Flow.from_client_secrets_file(
         str(config.GOOGLE_CREDENTIALS_FILE),

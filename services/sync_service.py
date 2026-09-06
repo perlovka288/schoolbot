@@ -110,7 +110,11 @@ async def _check_user(bot: Bot, user_id: int) -> None:
 
 
 async def run_cron_sync(bot: Bot) -> int:
-    """Один проход синхронизации — вызывается извне через /cron/sync."""
+    """Один проход синхронизации по всем пользователям.
+
+    Вызывается по HTTP извне — см. services/cron_server.py — вместо того,
+    чтобы крутиться самому в бесконечном цикле. Возвращает количество
+    проверенных пользователей (для ответа /cron/sync)."""
     user_ids = _authorized_user_ids()
     for user_id in user_ids:
         await _check_user(bot, user_id)
@@ -118,12 +122,18 @@ async def run_cron_sync(bot: Bot) -> int:
 
 
 async def run_sync_loop(bot: Bot) -> None:
-    """Бесконечный фоновый цикл. Запускается один раз через create_task."""
+    """Бесконечный фоновый цикл опроса.
+
+    Используется только в режиме polling (config.USE_WEBHOOK=false),
+    например при локальной разработке. В продакшне с вебхуком (Render
+    и т.п.) вместо этого цикла используется /cron/sync — см.
+    services/cron_server.py и config.USE_WEBHOOK: постоянно работающий
+    цикл не даёт бесплатному сервису "засыпать" между запросами и сводит
+    на нет экономию часов, ради которой и включают вебхук."""
     logger.info(
         "Фоновая синхронизация курсов запущена (опрос каждые %d сек.)",
         config.SYNC_INTERVAL_SECONDS,
     )
     while True:
-        for user_id in _authorized_user_ids():
-            await _check_user(bot, user_id)
+        await run_cron_sync(bot)
         await asyncio.sleep(config.SYNC_INTERVAL_SECONDS)
