@@ -109,6 +109,14 @@ async def _check_user(bot: Bot, user_id: int) -> None:
     _save_seen_course_ids(user_id, current_ids)
 
 
+async def run_cron_sync(bot: Bot) -> int:
+    """Один проход синхронизации — вызывается извне через /cron/sync."""
+    user_ids = _authorized_user_ids()
+    for user_id in user_ids:
+        await _check_user(bot, user_id)
+    return len(user_ids)
+
+
 async def run_sync_loop(bot: Bot) -> None:
     """Бесконечный фоновый цикл. Запускается один раз через create_task."""
     logger.info(

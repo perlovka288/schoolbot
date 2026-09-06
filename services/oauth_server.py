@@ -1,21 +1,5 @@
 """
-Веб-сервер для приёма OAuth-редиректа от Google.
-
-Раньше пользователь после разрешения доступа получал редирект на
-http://localhost, куда никто не слушал — страница просто зависала
-(бесконечная загрузка), и код авторизации приходилось копировать
-руками из адресной строки и присылать боту отдельным сообщением.
-
-Теперь на порту config.OAUTH_CALLBACK_PORT реально поднят веб-сервер:
-Google сам присылает код прямо сюда, мы тут же обмениваем его на
-токен и пишем пользователю в Telegram, что всё готово. Копировать
-ничего не нужно.
-
-Пока бот запущен локально на вашем компьютере — это работает "из
-коробки", потому что браузер (в котором вы разрешаете доступ) и
-сервер бота находятся на одной машине (localhost). После деплоя на
-хостинг с публичным адресом поменяйте OAUTH_REDIRECT_BASE_URL в .env
-и redirect URI в Google Cloud Console — см. комментарий в config.py.
+Обработчик OAuth-редиректа от Google — часть общего веб-приложения бота.
 """
 
 from __future__ import annotations
@@ -31,9 +15,6 @@ from services.google_service import GoogleAuthError
 
 logger = logging.getLogger(__name__)
 
-# oauth "state" -> telegram user_id, кому вернуть результат авторизации.
-# Хранится в памяти процесса: колбэк-сервер и бот работают в одном процессе,
-# так что до перезапуска бота этого достаточно.
 _pending: dict[str, int] = {}
 
 _PAGE = """<!doctype html>
@@ -45,7 +26,6 @@ _PAGE = """<!doctype html>
 
 
 def register_pending(state: str, user_id: int) -> None:
-    """Запоминает, какому пользователю Telegram принадлежит этот oauth state."""
     _pending[state] = user_id
 
 
@@ -56,7 +36,7 @@ def _page(title: str, heading: str, message: str) -> web.Response:
     )
 
 
-def _build_app(bot: Bot) -> web.Application:
+def setup_routes(app: web.Application, bot: Bot) -> None:
     async def oauth_callback(request: web.Request) -> web.Response:
         params = request.query
         state = params.get("state")
@@ -66,11 +46,9 @@ def _build_app(bot: Bot) -> web.Application:
         user_id = _pending.pop(state, None) if state else None
 
         if error:
-            logger.info("OAuth: пользователь отклонил доступ (%s)", error)
             return _page(
                 "Отменено", "Доступ не предоставлен",
-                "Вы отменили авторизацию. Вернитесь в Telegram и попробуйте снова, "
-                "если это была ошибка.",
+                "Вы отменили авторизацию. Вернитесь в Telegram и попробуйте снова.",
             )
 
         if not user_id or not code:
@@ -83,10 +61,9 @@ def _build_app(bot: Bot) -> web.Application:
         try:
             google_service.exchange_code_and_save(user_id, code)
         except GoogleAuthError as exc:
-            logger.warning("OAuth callback: ошибка обмена кода для %s: %s", user_id, exc)
             try:
                 await bot.send_message(user_id, f"⚠️ Не получилось авторизоваться: {exc}")
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
             return _page("Ошибка", "⚠️ Не получилось авторизоваться", str(exc))
 
@@ -95,7 +72,7 @@ def _build_app(bot: Bot) -> web.Application:
                 user_id,
                 "✅ Авторизация прошла успешно! Теперь можно смотреть домашние задания.",
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.exception("Не удалось отправить подтверждение пользователю %s", user_id)
 
         return _page(
@@ -103,23 +80,4 @@ def _build_app(bot: Bot) -> web.Application:
             "Можете закрыть эту вкладку и вернуться в Telegram.",
         )
 
-    app = web.Application()
     app.router.add_get("/oauth/callback", oauth_callback)
-    return app
-
-
-async def start_oauth_server(bot: Bot) -> web.AppRunner:
-    """Поднимает колбэк-сервер. Возвращает runner — держите его, чтобы сервер
-    не был собран сборщиком мусора, и можно было аккуратно остановить."""
-    app = _build_app(bot)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, config.OAUTH_CALLBACK_HOST, config.OAUTH_CALLBACK_PORT)
-    await site.start()
-    logger.info(
-        "OAuth callback-сервер запущен на %s:%d (redirect_uri=%s)",
-        config.OAUTH_CALLBACK_HOST,
-        config.OAUTH_CALLBACK_PORT,
-        config.OAUTH_REDIRECT_URI,
-    )
-    return runner

@@ -138,3 +138,10 @@ HANDWRITING_FONT_PATH: Path = FONTS_DIR / "handwriting.ttf"
 # Временная папка для скачанных вложений / сгенерированных изображений
 TMP_DIR: Path = DATA_ROOT / "tmp"
 TMP_DIR.mkdir(exist_ok=True)
+USE_WEBHOOK: bool = os.getenv("USE_WEBHOOK", "false").strip().lower() in (
+    "1", "true", "yes", "on",
+)
+WEBHOOK_SECRET: str = os.getenv("WEBHOOK_SECRET", TELEGRAM_BOT_TOKEN)
+WEBHOOK_PATH: str = f"/webhook/{WEBHOOK_SECRET}"
+WEBHOOK_URL: str = f"{OAUTH_REDIRECT_BASE_URL}{WEBHOOK_PATH}"
+CRON_SECRET: str = os.getenv("CRON_SECRET", "")
