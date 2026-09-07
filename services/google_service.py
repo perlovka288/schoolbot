@@ -15,9 +15,20 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
+
+# Google иногда возвращает набор выданных scope'ов в другом виде, чем мы
+# запросили (например, подменяет "classroom.coursework.me.readonly" на
+# эквивалентный "classroom.student-submissions.me.readonly") — это не
+# ошибка авторизации, а особенность Classroom API. Библиотека oauthlib
+# по умолчанию считает это фатальной ошибкой ("Scope has changed") — эта
+# переменная окружения превращает её в безобидное предупреждение в лог.
+# Должна быть установлена ДО первого запроса токена.
+os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
