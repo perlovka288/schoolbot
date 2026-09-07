@@ -143,7 +143,7 @@ CRON_SECRET: str = os.getenv("CRON_SECRET", "")
 # ---------------------------------------------------------------------------
 # Gemini
 # ---------------------------------------------------------------------------
-GEMINI_MODEL_NAME: str = "gemini-1.5-flash"
+GEMINI_MODEL_NAME: str = os.getenv("GEMINI_MODEL_NAME", "gemini-flash-latest")
 
 SYSTEM_PROMPT: str = (
     "Ты опытный школьный репетитор. Реши задание по шагам, объясни логику "
