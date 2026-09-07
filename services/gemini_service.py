@@ -33,7 +33,7 @@ _books_cache: dict[str, str] | None = None
 # перегружена (503 UNAVAILABLE — "This model is currently experiencing
 # high demand"). Это не ошибка конфигурации, а обычная временная
 # перегрузка на стороне Google, которая обычно проходит за секунды.
-_MAX_RETRIES_PER_KEY = 2
+_MAX_RETRIES_PER_KEY = 3
 _RETRY_DELAY_SECONDS = 4
 
 
@@ -41,35 +41,70 @@ def _generate_with_retry(**kwargs):
     """Пробует все доступные ключи Gemini по очереди (в случайном порядке),
     на каждом — несколько попыток при временной перегрузке (503/500).
     Если у ключа кончилась квота или он невалиден (4xx) — сразу переходит
-    к следующему ключу, не тратя время на повтор того же ключа."""
-    clients_order = _clients[:]
-    random.shuffle(clients_order)
+    к следующему ключу, не тратя время на повтор того же ключа.
+
+    Если ВСЕ ключи упёрлись в перегрузку (503) на основной модели —
+    дополнительно пробует резервные модели из config.GEMINI_FALLBACK_MODELS
+    (тоже перебирая все ключи для каждой) прежде чем сдаться. Это отдельный
+    механизм от смены ключей: перегружена обычно конкретная модель, а не
+    аккаунт/ключ, так что соседняя модель часто доступна сразу."""
+    models_order = [kwargs.get("model")] + [
+        m for m in config.GEMINI_FALLBACK_MODELS if m != kwargs.get("model")
+    ]
 
     last_exc: Exception | None = None
-    for client_idx, client in enumerate(clients_order, start=1):
-        for attempt in range(1, _MAX_RETRIES_PER_KEY + 1):
-            try:
-                return client.models.generate_content(**kwargs)
-            except ServerError as exc:
-                # 503/500 — временная перегрузка модели, есть смысл повторить
-                # тем же ключом ещё раз, прежде чем переходить к следующему.
-                last_exc = exc
-                logger.warning(
-                    "Gemini API временно недоступен (ключ %d/%d, попытка %d/%d): %s",
-                    client_idx, len(clients_order), attempt, _MAX_RETRIES_PER_KEY, exc,
-                )
-                if attempt < _MAX_RETRIES_PER_KEY:
-                    time.sleep(_RETRY_DELAY_SECONDS)
-            except ClientError as exc:
-                # 4xx — например, у этого конкретного ключа кончилась квota
-                # (429) или он невалиден. Повторять тем же ключом бессмысленно,
-                # сразу пробуем следующий, если он есть.
-                last_exc = exc
-                logger.warning(
-                    "Gemini API отклонил запрос по ключу %d/%d: %s",
-                    client_idx, len(clients_order), exc,
-                )
-                break
+    for model_idx, model_name in enumerate(models_order, start=1):
+        call_kwargs = {**kwargs, "model": model_name}
+
+        clients_order = _clients[:]
+        random.shuffle(clients_order)
+
+        all_keys_overloaded = True  # остаётся True, только если КАЖДЫЙ ключ вернул 503/500
+        for client_idx, client in enumerate(clients_order, start=1):
+            for attempt in range(1, _MAX_RETRIES_PER_KEY + 1):
+                try:
+                    response = client.models.generate_content(**call_kwargs)
+                    if model_idx > 1:
+                        logger.info(
+                            "Gemini API: основная модель была перегружена, "
+                            "успешно ответила резервная модель %s", model_name,
+                        )
+                    return response
+                except ServerError as exc:
+                    # 503/500 — временная перегрузка модели, есть смысл повторить
+                    # тем же ключом ещё раз, прежде чем переходить к следующему.
+                    last_exc = exc
+                    logger.warning(
+                        "Gemini API временно недоступен (модель %s, ключ %d/%d, "
+                        "попытка %d/%d): %s",
+                        model_name, client_idx, len(clients_order), attempt,
+                        _MAX_RETRIES_PER_KEY, exc,
+                    )
+                    if attempt < _MAX_RETRIES_PER_KEY:
+                        # Небольшой разброс задержки (jitter), чтобы при
+                        # нескольких одновременных запросах они не долбили
+                        # API синхронными залпами.
+                        time.sleep(_RETRY_DELAY_SECONDS + random.uniform(0, 2))
+                except ClientError as exc:
+                    # 4xx — например, у этого конкретного ключа кончилась квота
+                    # (429) или он невалиден. Повторять тем же ключом бессмысленно,
+                    # сразу пробуем следующий, если он есть. Это НЕ перегрузка
+                    # модели, так что смена модели тут не поможет — не считаем
+                    # ключ "перегруженным" для целей перехода на fallback-модель.
+                    all_keys_overloaded = False
+                    last_exc = exc
+                    logger.warning(
+                        "Gemini API отклонил запрос по ключу %d/%d (модель %s): %s",
+                        client_idx, len(clients_order), model_name, exc,
+                    )
+                    break
+
+        if not all_keys_overloaded:
+            # Хотя бы один ключ дал не-503 ошибку (например, у всех кончилась
+            # квота, 429) — переход на другую модель тут не поможет, не тратим
+            # время на её перебор.
+            break
+
     raise last_exc
 
 
@@ -166,9 +201,11 @@ def _friendly_gemini_error(exc: Exception) -> str:
         return (
             "Вичерпано денний ліміт запитів до Gemini API (безкоштовна квота). "
             "Спробуйте, будь ласка, трохи пізніше — квота оновлюється щодня. "
-            "Якщо це повторюється часто, можна додати ще один ключ у "
-            "GEMINI_API_KEY через кому (config.py / .env) — бот сам "
-            "переключиться на нього."
+            "Якщо це повторюється часто: квота Gemini рахується на Google Cloud "
+            "ПРОЄКТ, а не на окремий ключ — якщо всі ваші ключі в GEMINI_API_KEY "
+            "створені в одному й тому ж проєкті, вони діляться одним і тим самим "
+            "лімітом і не допомагають. Потрібен ключ зі СПРАВДІ іншого проєкту "
+            "(або іншого Google-акаунта)."
         )
     if "UNAVAILABLE" in text or "503" in text or "500" in text:
         return (
