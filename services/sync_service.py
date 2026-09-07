@@ -99,9 +99,9 @@ async def _check_user(bot: Bot, user_id: int) -> None:
         try:
             await bot.send_message(
                 user_id,
-                "🆕 В Google Classroom появился новый курс:\n"
+                "🆕 У Google Classroom з'явився новий курс:\n"
                 f"{names}\n\n"
-                "Нажмите «📚 Мои ДЗ из Classroom», чтобы посмотреть задания.",
+                "Натисніть «📚 Мої ДЗ із Classroom», щоб переглянути завдання.",
             )
         except Exception:  # noqa: BLE001 — например, пользователь заблокировал бота
             logger.exception("Не удалось уведомить пользователя %s", user_id)

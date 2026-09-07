@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import mimetypes
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,6 +45,36 @@ class GoogleAuthError(Exception):
     """Ошибка авторизации Google."""
 
 
+# Раньше тип вложения определялся ТОЛЬКО по расширению в имени файла
+# (взятому из названия материала в Classroom). Если учитель прикреплял,
+# например, PDF или PPTX без расширения в названии ("Домашнє завдання 5"
+# вместо "Домашнє завдання 5.pdf"), файл скачивался нормально, но
+# solver.py его просто не находил среди document_paths/image_paths —
+# и в Gemini уходило пустое задание, хотя вложение по факту было.
+# Теперь расширение всегда переопределяется по РЕАЛЬНОМУ mimeType,
+# который отдаёт Drive API — это надёжнее, чем верить названию файла.
+_MIME_TO_EXTENSION: dict[str, str] = {
+    "application/pdf": ".pdf",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/msword": ".doc",
+    "application/vnd.ms-powerpoint": ".ppt",
+    "text/plain": ".txt",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/bmp": ".bmp",
+}
+
+
+def _guess_extension(mime_type: str) -> str:
+    ext = _MIME_TO_EXTENSION.get(mime_type)
+    if ext:
+        return ext
+    guessed = mimetypes.guess_extension(mime_type or "")
+    return guessed or ""
+
+
 @dataclass
 class CourseWork:
     course_id: str
@@ -61,19 +92,19 @@ def describe_materials(materials: list[dict]) -> list[str]:
     lines: list[str] = []
     for m in materials:
         if "driveFile" in m:
-            title = m["driveFile"].get("driveFile", {}).get("title", "Файл без названия")
+            title = m["driveFile"].get("driveFile", {}).get("title", "Файл без назви")
             lines.append(f"📎 {title}")
         elif "link" in m:
-            title = m["link"].get("title") or m["link"].get("url", "ссылка")
+            title = m["link"].get("title") or m["link"].get("url", "посилання")
             lines.append(f"🔗 {title}")
         elif "youtubeVideo" in m:
-            title = m["youtubeVideo"].get("title", "YouTube-видео")
+            title = m["youtubeVideo"].get("title", "YouTube-відео")
             lines.append(f"▶️ {title}")
         elif "form" in m:
             title = m["form"].get("title", "Google-форма")
             lines.append(f"📝 {title}")
         else:
-            lines.append("📎 Вложение")
+            lines.append("📎 Вкладення")
     return lines
 
 
@@ -85,13 +116,13 @@ def build_auth_flow(state: str | None = None) -> Flow:
     """Создаёт объект Flow на основе credentials.json (Desktop App)."""
     if not config.GOOGLE_CREDENTIALS_FILE.exists():
         raise GoogleAuthError(
-            "Файл credentials.json не найден. Скачайте его в Google Cloud "
-            "Console (Credentials -> Create OAuth client ID -> тип "
-            "«Web application», НЕ «Desktop app» — иначе redirect_uri не "
-            "совпадёт с адресом бота). В Authorized redirect URIs добавьте "
-            f"{config.OAUTH_REDIRECT_URI}. На Render загрузите файл как "
-            "Secret File (Environment -> Secret Files, путь "
-            "/etc/secrets/credentials.json — уже прописан в render.yaml)."
+            "Файл credentials.json не знайдено. Завантажте його в Google "
+            "Cloud Console (Credentials -> Create OAuth client ID -> тип "
+            "«Web application», НЕ «Desktop app» — інакше redirect_uri не "
+            "збіжиться з адресою бота). У Authorized redirect URIs додайте "
+            f"{config.OAUTH_REDIRECT_URI}. На Render завантажте файл як "
+            "Secret File (Environment -> Secret Files, шлях "
+            "/etc/secrets/credentials.json — вже прописано в render.yaml)."
         )
     flow = Flow.from_client_secrets_file(
         str(config.GOOGLE_CREDENTIALS_FILE),
@@ -125,7 +156,7 @@ def extract_code(user_text: str) -> str:
         code = qs.get("code", [None])[0]
         if not code:
             raise GoogleAuthError(
-                "Не удалось найти параметр code= в присланной ссылке."
+                "Не вдалося знайти параметр code= у надісланому посиланні."
             )
         return code
     return user_text
@@ -139,7 +170,7 @@ def exchange_code_and_save(user_id: int, code_or_url: str) -> None:
         flow.fetch_token(code=code)
     except Exception as exc:  # noqa: BLE001
         raise GoogleAuthError(
-            f"Не удалось обменять код на токен: {exc}"
+            f"Не вдалося обміняти код на токен: {exc}"
         ) from exc
 
     creds = flow.credentials
@@ -154,7 +185,7 @@ def is_authorized(user_id: int) -> bool:
 def load_credentials(user_id: int) -> Credentials:
     path = _token_path(user_id)
     if not path.exists():
-        raise GoogleAuthError("Пользователь не авторизован в Google.")
+        raise GoogleAuthError("Користувача не авторизовано в Google.")
 
     creds = Credentials.from_authorized_user_file(str(path), config.GOOGLE_SCOPES)
 
@@ -164,8 +195,8 @@ def load_credentials(user_id: int) -> Credentials:
             path.write_text(creds.to_json(), encoding="utf-8")
         except Exception as exc:  # noqa: BLE001
             raise GoogleAuthError(
-                "Срок действия токена истёк и обновить его не удалось. "
-                "Авторизуйтесь заново."
+                "Термін дії токена сплив, і оновити його не вдалося. "
+                "Авторизуйтеся заново."
             ) from exc
 
     return creds
@@ -192,7 +223,7 @@ def get_active_courses(user_id: int) -> list[dict]:
         )
         return response.get("courses", [])
     except HttpError as exc:
-        raise GoogleAuthError(f"Ошибка Classroom API: {exc}") from exc
+        raise GoogleAuthError(f"Помилка Classroom API: {exc}") from exc
 
 
 def get_coursework(user_id: int, course_id: str) -> list[CourseWork]:
@@ -251,7 +282,7 @@ def get_coursework(user_id: int, course_id: str) -> list[CourseWork]:
             )
         return result
     except HttpError as exc:
-        raise GoogleAuthError(f"Ошибка Classroom API: {exc}") from exc
+        raise GoogleAuthError(f"Помилка Classroom API: {exc}") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +303,7 @@ def download_material_files(
     try:
         drive = build("drive", "v3", credentials=creds)
     except HttpError as exc:
-        raise GoogleAuthError(f"Ошибка Drive API: {exc}") from exc
+        raise GoogleAuthError(f"Помилка Drive API: {exc}") from exc
 
     for material in materials:
         drive_file = material.get("driveFile", {}).get("driveFile")
@@ -296,13 +327,18 @@ def download_material_files(
                 target_path = target_path.with_suffix(".pdf")
             else:
                 request = drive.files().get_media(fileId=file_id)
+                # Всегда приводим расширение к реальному mimeType файла —
+                # см. комментарий у _MIME_TO_EXTENSION выше.
+                real_ext = _guess_extension(mime_type)
+                if real_ext and target_path.suffix.lower() != real_ext.lower():
+                    target_path = target_path.with_suffix(real_ext)
 
             with open(target_path, "wb") as f:
                 f.write(request.execute())
 
             downloaded.append(target_path)
         except HttpError as exc:
-            logger.warning("Не удалось скачать файл %s: %s", title, exc)
+            logger.warning("Не вдалося завантажити файл %s: %s", title, exc)
             continue
 
     return downloaded

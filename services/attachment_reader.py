@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -113,3 +114,56 @@ def extract_all(paths: list[Path]) -> str:
         if text:
             blocks.append(f"--- Файл: {path.name} ---\n{text}")
     return "\n\n".join(blocks)
+
+
+# Ограничение на число страниц PDF, которые рендерим в картинки —
+# защита от случая, если кто-то прикрепит учебник на 300 страниц вместо
+# одного задания.
+_MAX_PDF_PAGES_AS_IMAGES = 6
+
+
+def pdf_pages_as_images(path: Path, dest_dir: Path | None = None) -> list[Path]:
+    """
+    Рендерит страницы PDF в PNG-картинки.
+
+    Раньше "невидимый" PDF (например, отсканированное фото задания без
+    текстового слоя — так часто присылают домашку в школе) молча давал
+    extract_text() == "" — и задание уходило в Gemini вообще без условия,
+    хотя файл был. Теперь для таких сканов вместо пустого текста
+    подставляются картинки страниц — Gemini прекрасно читает текст
+    задания с изображения, так же как с обычного фото.
+
+    Возвращает [] при любой ошибке (например, PyMuPDF не установлен) —
+    вызывающий код должен быть готов к пустому списку и в таком случае
+    сообщить пользователю, что файл прочитать не удалось.
+    """
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        logger.warning(
+            "PyMuPDF (пакет 'pymupdf') не установлен — не могу отрендерить "
+            "страницы PDF %s как картинки для сканов без текстового слоя.",
+            path,
+        )
+        return []
+
+    out_dir = dest_dir or path.parent
+    out_dir.mkdir(parents=True, exist_ok=True)
+    images: list[Path] = []
+    try:
+        doc = fitz.open(str(path))
+        try:
+            for i, page in enumerate(doc):
+                if i >= _MAX_PDF_PAGES_AS_IMAGES:
+                    break
+                pix = page.get_pixmap(dpi=150)
+                img_path = out_dir / f"{path.stem}_p{i + 1}_{uuid4().hex[:6]}.png"
+                pix.save(str(img_path))
+                images.append(img_path)
+        finally:
+            doc.close()
+    except Exception:  # noqa: BLE001
+        logger.exception("Не удалось отрендерить страницы PDF %s как картинки", path)
+        return []
+
+    return images

@@ -146,12 +146,36 @@ def find_relevant_book_context(query: str, max_chars: int = config.MAX_BOOK_CONT
 
 
 def _extract_short_answer(full_text: str) -> str:
-    match = re.search(r"Ответ:\s*(.+)", full_text, re.IGNORECASE)
+    # Основной шаблон — украинский ("Відповідь:"), но на всякий случай
+    # (если модель вдруг ответит по-старому) оставляем и русский вариант.
+    match = re.search(r"Відповідь:\s*(.+)", full_text, re.IGNORECASE)
+    if not match:
+        match = re.search(r"Ответ:\s*(.+)", full_text, re.IGNORECASE)
     if match:
         return match.group(1).strip()
     # fallback — последняя непустая строка
     lines = [l.strip() for l in full_text.splitlines() if l.strip()]
     return lines[-1] if lines else full_text[:200]
+
+
+def _friendly_gemini_error(exc: Exception) -> str:
+    """Превращает сырую ошибку Gemini API (часто — простыня JSON) в
+    короткое понятное сообщение на украинском для пользователя."""
+    text = str(exc)
+    if "RESOURCE_EXHAUSTED" in text or "429" in text:
+        return (
+            "Вичерпано денний ліміт запитів до Gemini API (безкоштовна квота). "
+            "Спробуйте, будь ласка, трохи пізніше — квота оновлюється щодня. "
+            "Якщо це повторюється часто, можна додати ще один ключ у "
+            "GEMINI_API_KEY через кому (config.py / .env) — бот сам "
+            "переключиться на нього."
+        )
+    if "UNAVAILABLE" in text or "503" in text or "500" in text:
+        return (
+            "Gemini API зараз тимчасово перевантажений. Спробуйте, будь "
+            "ласка, ще раз за хвилину."
+        )
+    return f"Помилка при зверненні до Gemini API: {exc}"
 
 
 def solve_task(
@@ -170,8 +194,8 @@ def solve_task(
     text_prompt = task_text.strip()
     if context:
         text_prompt = (
-            f"Вот релевантный фрагмент учебника, используй его как справочный материал:\n\n"
-            f"{context}\n\n---\n\nЗадание ученика:\n{text_prompt}"
+            f"Ось релевантний фрагмент підручника, використай його як довідковий матеріал:\n\n"
+            f"{context}\n\n---\n\nЗавдання учня:\n{text_prompt}"
         )
     prompt_parts.append(text_prompt)
 
@@ -192,7 +216,7 @@ def solve_task(
         full_text = response.text
     except Exception as exc:  # noqa: BLE001
         logger.exception("Ошибка Gemini API")
-        raise RuntimeError(f"Ошибка при обращении к Gemini API: {exc}") from exc
+        raise RuntimeError(_friendly_gemini_error(exc)) from exc
 
     short_answer = _extract_short_answer(full_text)
     return SolveResult(full_text=full_text, short_answer=short_answer)
@@ -203,13 +227,13 @@ def answer_book_question(question: str) -> str:
     context = find_relevant_book_context(question)
     if not context:
         prompt = (
-            f"В папке с учебниками не нашлось релевантного материала. "
-            f"Ответь на вопрос ученика на основе общих знаний:\n\n{question}"
+            f"У папці з підручниками не знайшлося релевантного матеріалу. "
+            f"Дай відповідь на запитання учня на основі загальних знань:\n\n{question}"
         )
     else:
         prompt = (
-            f"Используй следующий фрагмент учебника, чтобы ответить на вопрос ученика.\n\n"
-            f"Фрагмент учебника:\n{context}\n\n---\n\nВопрос ученика:\n{question}"
+            f"Використай наступний фрагмент підручника, щоб відповісти на запитання учня.\n\n"
+            f"Фрагмент підручника:\n{context}\n\n---\n\nЗапитання учня:\n{question}"
         )
 
     try:
@@ -223,4 +247,4 @@ def answer_book_question(question: str) -> str:
         return response.text
     except Exception as exc:  # noqa: BLE001
         logger.exception("Ошибка Gemini API")
-        raise RuntimeError(f"Ошибка при обращении к Gemini API: {exc}") from exc
+        raise RuntimeError(_friendly_gemini_error(exc)) from exc

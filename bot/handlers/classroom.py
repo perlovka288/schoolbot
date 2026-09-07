@@ -27,12 +27,12 @@ async def show_courses(message: Message, state: FSMContext) -> None:
 
     if not google_service.is_authorized(user_id):
         await message.answer(
-            "Сначала авторизуйтесь: нажмите «🔑 Авторизоваться в Google».",
+            "Спочатку авторизуйтеся: натисніть «🔑 Авторизуватися в Google».",
             reply_markup=main_menu_keyboard(user_id),
         )
         return
 
-    await message.answer("Загружаю список курсов…")
+    await message.answer("Завантажую список курсів…")
 
     try:
         courses = google_service.get_active_courses(user_id)
@@ -41,12 +41,12 @@ async def show_courses(message: Message, state: FSMContext) -> None:
         return
 
     if not courses:
-        await message.answer("Активных курсов в Classroom не найдено.")
+        await message.answer("Активних курсів у Classroom не знайдено.")
         return
 
     await state.update_data(courses={c["id"]: c["name"] for c in courses})
     await message.answer(
-        "Выберите курс, чтобы посмотреть актуальные домашние задания:",
+        "Оберіть курс, щоб переглянути актуальні домашні завдання:",
         reply_markup=courses_keyboard(courses),
     )
 
@@ -56,7 +56,7 @@ async def show_coursework(callback: CallbackQuery, state: FSMContext) -> None:
     user_id = callback.from_user.id
     course_id = callback.data.split(":", 1)[1]
 
-    await callback.message.edit_text("Загружаю домашние задания…")
+    await callback.message.edit_text("Завантажую домашні завдання…")
 
     try:
         courseworks = google_service.get_coursework(user_id, course_id)
@@ -67,7 +67,7 @@ async def show_coursework(callback: CallbackQuery, state: FSMContext) -> None:
 
     if not courseworks:
         await callback.message.edit_text(
-            "🎉 По этому курсу нет невыполненных заданий — всё сдано!"
+            "🎉 По цьому курсу немає невиконаних завдань — усе здано!"
         )
         await callback.answer()
         return
@@ -86,7 +86,7 @@ async def show_coursework(callback: CallbackQuery, state: FSMContext) -> None:
         }
     await state.update_data(courseworks=cw_store)
 
-    lines = ["Актуальные задания:\n"]
+    lines = ["Актуальні завдання:\n"]
     for cw in courseworks:
         due = f" (до {cw.due_date})" if cw.due_date else ""
         lines.append(f"• {cw.title}{due}")
@@ -109,7 +109,7 @@ async def back_to_courses(callback: CallbackQuery, state: FSMContext) -> None:
         return
 
     await callback.message.edit_text(
-        "Выберите курс:",
+        "Оберіть курс:",
     )
     await callback.message.edit_reply_markup(reply_markup=courses_keyboard(courses))
     await callback.answer()
@@ -125,7 +125,7 @@ async def show_coursework_detail(callback: CallbackQuery, state: FSMContext) -> 
     cw_info = cw_store.get(coursework_id)
 
     if not cw_info:
-        await callback.answer("Данные о задании устарели, откройте список заново.", show_alert=True)
+        await callback.answer("Дані про завдання застаріли, відкрийте список знову.", show_alert=True)
         return
 
     materials = cw_info.get("materials", [])
@@ -136,17 +136,17 @@ async def show_coursework_detail(callback: CallbackQuery, state: FSMContext) -> 
         f"Курс/тема: {escape(cw_info['course_name'])}",
     ]
     if cw_info.get("due_date"):
-        text_parts.append(f"Срок сдачи: {escape(cw_info['due_date'])}")
+        text_parts.append(f"Термін здачі: {escape(cw_info['due_date'])}")
     text_parts.append("")
-    text_parts.append(f"Описание: {escape(cw_info.get('description') or '(описание отсутствует)')}")
+    text_parts.append(f"Опис: {escape(cw_info.get('description') or '(опис відсутній)')}")
 
     if materials_lines:
         text_parts.append("")
-        text_parts.append("Прикреплённые файлы:")
+        text_parts.append("Прикріплені файли:")
         text_parts.extend(materials_lines)
     else:
         text_parts.append("")
-        text_parts.append("(вложений нет)")
+        text_parts.append("(вкладень немає)")
 
     await callback.message.edit_text(
         "\n".join(text_parts),

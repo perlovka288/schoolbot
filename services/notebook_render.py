@@ -5,13 +5,49 @@
 
 from __future__ import annotations
 
+import re
 import textwrap
+from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
 from PIL import Image, ImageDraw, ImageFont
 
 import config
+
+# Украинские названия месяцев для "правильной" даты в шапке листа
+# (родительный падеж — "7 вересня 2026 р.").
+_UA_MONTHS_GENITIVE = [
+    "січня", "лютого", "березня", "квітня", "травня", "червня",
+    "липня", "серпня", "вересня", "жовтня", "листопада", "грудня",
+]
+
+
+def _today_ua() -> str:
+    now = datetime.now()
+    return f"{now.day} {_UA_MONTHS_GENITIVE[now.month - 1]} {now.year} р."
+
+
+# На случай, если модель всё же вставит символы markdown-разметки
+# (несмотря на явный запрет в SYSTEM_PROMPT) — вычищаем их перед тем,
+# как рисовать текст на "тетрадном листе", чтобы там не остались
+# решётки/звёздочки/доллары вместо форматирования.
+_MD_HEADER_RE = re.compile(r"^#{1,6}\s*", re.MULTILINE)
+_MD_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+_MD_ITALIC_RE = re.compile(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)")
+_MD_BULLET_RE = re.compile(r"^\s*[\*\-]\s+", re.MULTILINE)
+_MD_HRULE_RE = re.compile(r"^\s*-{3,}\s*$", re.MULTILINE)
+_MD_INLINE_MATH_RE = re.compile(r"\$\$?(.+?)\$\$?")
+
+
+def _strip_markdown(text: str) -> str:
+    text = _MD_HRULE_RE.sub("", text)
+    text = _MD_HEADER_RE.sub("", text)
+    text = _MD_BOLD_RE.sub(r"\1", text)
+    text = _MD_ITALIC_RE.sub(r"\1", text)
+    text = _MD_BULLET_RE.sub("", text)
+    text = _MD_INLINE_MATH_RE.sub(r"\1", text)
+    return text
 
 # Параметры листа
 PAGE_WIDTH = 1240
@@ -71,12 +107,23 @@ def _load_font(size: int) -> ImageFont.FreeTypeFont:
         return ImageFont.load_default()
 
 
-def render_answer_pages(text: str, title: str | None = None) -> list[Path]:
+def render_answer_pages(
+    text: str,
+    title: str | None = None,
+    heading: str = "Домашня робота",
+    show_date: bool = True,
+) -> list[Path]:
     """
     Рендерит текст ответа на одном или нескольких "тетрадных" листах
-    (если текст длинный — разбивается на несколько страниц).
+    (если текст длинный — разбивается на несколько страниц), как это
+    выглядело бы в тетради ученика: сначала правильная сегодняшняя дата,
+    затем заголовок ("Домашня робота"), затем (опционально) название
+    задания/предмета, затем сам текст решения (Дано / Розв'язання /
+    Відповідь).
     Возвращает список путей к PNG-файлам.
     """
+    text = _strip_markdown(text)
+
     font = _load_font(FONT_SIZE)
     title_font = _load_font(FONT_SIZE + 6)
 
@@ -85,9 +132,19 @@ def render_answer_pages(text: str, title: str | None = None) -> list[Path]:
     chars_per_line = max(20, int(usable_width / (FONT_SIZE * 0.52)))
 
     wrapped_lines: list[str] = []
+    header_line_count = 0
+
+    if show_date:
+        wrapped_lines.append(_today_ua())
+        header_line_count += 1
+    if heading:
+        wrapped_lines.append(heading)
+        header_line_count += 1
     if title:
-        wrapped_lines.extend(textwrap.wrap(title, width=chars_per_line))
-        wrapped_lines.append("")  # пустая строка-разделитель
+        wrapped_lines.extend(textwrap.wrap(title, width=chars_per_line) or [title])
+        header_line_count += 1
+    if wrapped_lines:
+        wrapped_lines.append("")  # пустая строка-разделитель перед решением
 
     for paragraph in text.split("\n"):
         if not paragraph.strip():
@@ -105,7 +162,7 @@ def render_answer_pages(text: str, title: str | None = None) -> list[Path]:
 
         y = MARGIN_TOP
         for i, line in enumerate(page_lines):
-            use_font = title_font if (title and page_idx == 0 and i == 0) else font
+            use_font = title_font if (page_idx == 0 and i < header_line_count) else font
             draw.text((MARGIN_LEFT, y), line, fill=INK_COLOR, font=use_font)
             y += LINE_SPACING
 

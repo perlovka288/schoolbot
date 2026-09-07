@@ -16,12 +16,12 @@ router = Router(name="start")
 @router.message(CommandStart())
 async def cmd_start(message: Message) -> None:
     await message.answer(
-        "Привет! Я бот-помощник в учёбе 🎓\n\n"
-        "Что я умею:\n"
-        "🔑 Авторизовать тебя в Google Classroom\n"
-        "📚 Показывать актуальные домашние задания и решать их с помощью ИИ\n"
-        "📖 Отвечать на вопросы по учебникам\n\n"
-        "Выбери действие на клавиатуре ниже 👇",
+        "Привіт! Я бот-помічник у навчанні 🎓\n\n"
+        "Що я вмію:\n"
+        "🔑 Авторизувати тебе в Google Classroom\n"
+        "📚 Показувати актуальні домашні завдання та розв'язувати їх за допомогою ШІ\n"
+        "📖 Відповідати на запитання по підручниках\n\n"
+        "Обери дію на клавіатурі нижче 👇",
         reply_markup=main_menu_keyboard(message.from_user.id),
     )
 
@@ -31,6 +31,6 @@ async def logout_handler(message: Message) -> None:
     google_service.logout(message.from_user.id)
     sync_service.clear_state(message.from_user.id)
     await message.answer(
-        "Вы вышли из аккаунта Google. Токен удалён.",
+        "Ви вийшли з облікового запису Google. Токен видалено.",
         reply_markup=main_menu_keyboard(message.from_user.id),
     )

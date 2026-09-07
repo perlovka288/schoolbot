@@ -9,11 +9,11 @@ from aiogram.types import (
 
 import config
 
-BTN_AUTH = "🔑 Авторизоваться в Google"
-BTN_HOMEWORK = "📚 Мои ДЗ из Classroom"
-BTN_ASK_BOOK = "📖 Задать вопрос по учебнику"
-BTN_LOGOUT = "🚪 Выйти из Google"
-BTN_ADMIN_UPLOAD_BOOK = "📥 Загрузить учебник (админ)"
+BTN_AUTH = "🔑 Авторизуватися в Google"
+BTN_HOMEWORK = "📚 Мої ДЗ із Classroom"
+BTN_ASK_BOOK = "📖 Поставити запитання по підручнику"
+BTN_LOGOUT = "🚪 Вийти з Google"
+BTN_ADMIN_UPLOAD_BOOK = "📥 Завантажити підручник (адмін)"
 
 
 def main_menu_keyboard(user_id: int | None = None) -> ReplyKeyboardMarkup:
@@ -34,7 +34,7 @@ def courses_keyboard(courses: list[dict]) -> InlineKeyboardMarkup:
     buttons = [
         [
             InlineKeyboardButton(
-                text=course.get("name", "Без названия"),
+                text=course.get("name", "Без назви"),
                 callback_data=f"course:{course['id']}",
             )
         ]
@@ -54,7 +54,7 @@ def coursework_keyboard(course_id: str, courseworks: list) -> InlineKeyboardMark
         for cw in courseworks
     ]
     buttons.append(
-        [InlineKeyboardButton(text="⬅️ Назад к курсам", callback_data="back_to_courses")]
+        [InlineKeyboardButton(text="⬅️ Назад до курсів", callback_data="back_to_courses")]
     )
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -64,15 +64,15 @@ def coursework_detail_keyboard(course_id: str, coursework_id: str) -> InlineKeyb
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(
-                text="✅ Решить (по учебникам)",
+                text="✅ Розв'язати (по підручниках)",
                 callback_data=f"solve:{course_id}:{coursework_id}",
             )],
-            [InlineKeyboardButton(text="⬅️ Назад к заданиям", callback_data=f"course:{course_id}")],
+            [InlineKeyboardButton(text="⬅️ Назад до завдань", callback_data=f"course:{course_id}")],
         ]
     )
 
 
 def cancel_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]]
+        inline_keyboard=[[InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel")]]
     )

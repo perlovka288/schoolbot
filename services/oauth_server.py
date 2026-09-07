@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 _pending: dict[str, int] = {}
 
 _PAGE = """<!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><title>{title}</title></head>
+<html lang="uk"><head><meta charset="utf-8"><title>{title}</title></head>
 <body style="font-family: sans-serif; text-align: center; padding-top: 3em;">
 <h2>{heading}</h2>
 <p>{message}</p>
@@ -85,16 +85,16 @@ def setup_routes(app: web.Application, bot: Bot, dp: Dispatcher) -> None:
             if user_id:
                 await _clear_fsm_state(user_id)
             return _page(
-                "Отменено", "Доступ не предоставлен",
-                "Вы отменили авторизацию. Вернитесь в Telegram и попробуйте снова, "
-                "если это была ошибка.",
+                "Скасовано", "Доступ не надано",
+                "Ви скасували авторизацію. Поверніться в Telegram і спробуйте "
+                "знову, якщо це була помилка.",
             )
 
         if not user_id or not code:
             return _page(
-                "Ошибка", "⚠️ Ссылка устарела",
-                "Эта ссылка уже была использована или устарела. Вернитесь в "
-                "Telegram и нажмите «🔑 Авторизоваться в Google» ещё раз.",
+                "Помилка", "⚠️ Посилання застаріло",
+                "Це посилання вже було використане або застаріло. Поверніться "
+                "в Telegram і натисніть «🔑 Авторизуватися в Google» ще раз.",
             )
 
         try:
@@ -105,26 +105,26 @@ def setup_routes(app: web.Application, bot: Bot, dp: Dispatcher) -> None:
             try:
                 await bot.send_message(
                     user_id,
-                    f"⚠️ Не получилось авторизоваться: {exc}\n"
-                    "Нажмите «🔑 Авторизоваться в Google» ещё раз.",
+                    f"⚠️ Не вдалося авторизуватися: {exc}\n"
+                    "Натисніть «🔑 Авторизуватися в Google» ще раз.",
                 )
             except Exception:  # noqa: BLE001
                 pass
-            return _page("Ошибка", "⚠️ Не получилось авторизоваться", str(exc))
+            return _page("Помилка", "⚠️ Не вдалося авторизуватися", str(exc))
 
         await _clear_fsm_state(user_id)
 
         try:
             await bot.send_message(
                 user_id,
-                "✅ Авторизация прошла успешно! Теперь можно смотреть домашние задания.",
+                "✅ Авторизація пройшла успішно! Тепер можна переглядати домашні завдання.",
             )
         except Exception:  # noqa: BLE001
             logger.exception("Не удалось отправить подтверждение пользователю %s", user_id)
 
         return _page(
-            "Готово", "✅ Авторизация прошла успешно",
-            "Можете закрыть эту вкладку и вернуться в Telegram.",
+            "Готово", "✅ Авторизація пройшла успішно",
+            "Можете закрити цю вкладку і повернутися в Telegram.",
         )
 
     app.router.add_get("/oauth/callback", oauth_callback)

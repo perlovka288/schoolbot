@@ -9,5 +9,9 @@ google-genai==1.15.0
 pypdf==5.1.0
 python-pptx==1.0.2
 python-docx==1.1.2
+# Рендер страниц PDF в картинки — для сканов домашних заданий без
+# текстового слоя (см. services/attachment_reader.pdf_pages_as_images).
+# Чистый wheel без системных зависимостей (poppler и т.п. не нужны).
+pymupdf==1.24.11
 Pillow==11.0.0
 aiofiles==24.1.0

@@ -75,12 +75,12 @@ async def start_upload(message: Message, state: FSMContext) -> None:
 
     await state.set_state(AdminBookStates.waiting_for_book)
     await message.answer(
-        "Пришлите учебник одним из способов:\n\n"
-        "📎 <b>PDF-файлом</b> — просто прикрепите файл сюда.\n\n"
-        "🔗 <b>Ссылкой</b> на страницу учебника (например, "
-        "pidruchnyk.com.ua) — я попробую сам найти на странице прямую "
-        "ссылку на PDF и скачать её. Если не получится — пришлите PDF "
-        "файлом вручную.",
+        "Надішліть підручник одним із способів:\n\n"
+        "📎 <b>PDF-файлом</b> — просто прикріпіть файл сюди.\n\n"
+        "🔗 <b>Посиланням</b> на сторінку підручника (наприклад, "
+        "pidruchnyk.com.ua) — я спробую сам знайти на сторінці пряме "
+        "посилання на PDF і завантажити його. Якщо не вийде — надішліть "
+        "PDF файлом вручну.",
         reply_markup=cancel_keyboard(),
     )
 
@@ -88,9 +88,9 @@ async def start_upload(message: Message, state: FSMContext) -> None:
 @router.callback_query(F.data == "cancel", AdminBookStates.waiting_for_book)
 async def cancel_upload(callback, state: FSMContext) -> None:  # noqa: ANN001
     await state.clear()
-    await callback.message.edit_text("Отменено.")
+    await callback.message.edit_text("Скасовано.")
     await callback.message.answer(
-        "Главное меню:", reply_markup=main_menu_keyboard(callback.from_user.id)
+        "Головне меню:", reply_markup=main_menu_keyboard(callback.from_user.id)
     )
     await callback.answer()
 
@@ -111,7 +111,7 @@ async def upload_book_file(message: Message, state: FSMContext, bot) -> None:  #
 
     if not (doc.file_name or "").lower().endswith(".pdf"):
         await message.answer(
-            "⚠️ Пока принимаю только PDF. Сконвертируйте файл в PDF и пришлите снова.",
+            "⚠️ Поки приймаю тільки PDF. Сконвертуйте файл у PDF і надішліть знову.",
             reply_markup=main_menu_keyboard(message.from_user.id),
         )
         return
@@ -122,8 +122,8 @@ async def upload_book_file(message: Message, state: FSMContext, bot) -> None:  #
 
     count = gemini_service.refresh_books_cache()
     await message.answer(
-        f"✅ Учебник сохранён: {target.name}\n"
-        f"Всего учебников в базе теперь: {count}.",
+        f"✅ Підручник збережено: {target.name}\n"
+        f"Усього підручників у базі тепер: {count}.",
         reply_markup=main_menu_keyboard(message.from_user.id),
     )
 
@@ -156,13 +156,13 @@ async def upload_book_link(message: Message, state: FSMContext) -> None:
 
     if not url.lower().startswith(("http://", "https://")):
         await message.answer(
-            "⚠️ Это не похоже на ссылку. Пришлите ссылку (начинается с http/https) "
-            "или сам PDF-файл.",
+            "⚠️ Це не схоже на посилання. Надішліть посилання (починається з http/https) "
+            "або сам PDF-файл.",
             reply_markup=main_menu_keyboard(message.from_user.id),
         )
         return
 
-    status_msg = await message.answer("🔎 Ищу PDF на странице…")
+    status_msg = await message.answer("🔎 Шукаю PDF на сторінці…")
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -170,10 +170,10 @@ async def upload_book_link(message: Message, state: FSMContext) -> None:
 
             if not pdf_url:
                 await status_msg.edit_text(
-                    "⚠️ На этой странице не нашлось прямой ссылки на PDF "
-                    "(книга открывается только во встроенной читалке без "
-                    "файла для скачивания). Скачайте PDF вручную (если есть "
-                    "кнопка «Завантажити»/«Скачать») и пришлите его сюда "
+                    "⚠️ На цій сторінці не знайшлося прямого посилання на PDF "
+                    "(книга відкривається лише у вбудованій читалці без "
+                    "файлу для завантаження). Завантажте PDF вручну (якщо є "
+                    "кнопка «Завантажити»/«Скачать») і надішліть його сюди "
                     "файлом.",
                 )
                 return
@@ -183,25 +183,25 @@ async def upload_book_link(message: Message, state: FSMContext) -> None:
             ) as pdf_resp:
                 if pdf_resp.status != 200:
                     await status_msg.edit_text(
-                        f"⚠️ Не удалось скачать PDF по найденной ссылке "
+                        f"⚠️ Не вдалося завантажити PDF за знайденим посиланням "
                         f"(HTTP {pdf_resp.status}): {pdf_url}"
                     )
                     return
                 pdf_bytes = await pdf_resp.read()
     except Exception as exc:  # noqa: BLE001
         logger.exception("Не удалось скачать учебник по ссылке %s", url)
-        await status_msg.edit_text(f"⚠️ Ошибка при загрузке страницы: {exc}")
+        await status_msg.edit_text(f"⚠️ Помилка при завантаженні сторінки: {exc}")
         return
 
     if not pdf_bytes or len(pdf_bytes) < 1024:
-        await status_msg.edit_text("⚠️ Скачался пустой или слишком маленький файл — похоже, это не книга.")
+        await status_msg.edit_text("⚠️ Завантажився порожній або надто маленький файл — схоже, це не книга.")
         return
 
     target = await _save_book_bytes(pdf_bytes, page_title)
     count = gemini_service.refresh_books_cache()
 
     await status_msg.edit_text(
-        f"✅ Учебник скачан и сохранён: {target.name}\n"
-        f"Всего учебников в базе теперь: {count}."
+        f"✅ Підручник завантажено та збережено: {target.name}\n"
+        f"Усього підручників у базі тепер: {count}."
     )
-    await message.answer("Главное меню:", reply_markup=main_menu_keyboard(message.from_user.id))
+    await message.answer("Головне меню:", reply_markup=main_menu_keyboard(message.from_user.id))
