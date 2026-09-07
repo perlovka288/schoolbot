@@ -16,7 +16,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs

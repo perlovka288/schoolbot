@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import logging
 
-from aiogram import Bot
+from aiogram import Bot, Dispatcher
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.storage.base import StorageKey
 from aiohttp import web
 
 import config
@@ -55,8 +57,20 @@ def _page(title: str, heading: str, message: str) -> web.Response:
     )
 
 
-def setup_routes(app: web.Application, bot: Bot) -> None:
+def setup_routes(app: web.Application, bot: Bot, dp: Dispatcher) -> None:
     """Регистрирует маршрут /oauth/callback в общем aiohttp-приложении."""
+
+    async def _clear_fsm_state(user_id: int) -> None:
+        # Когда пользователь жмёт «Авторизоваться», бот переводит его в
+        # состояние AuthStates.waiting_for_code (см. bot/handlers/auth.py) —
+        # это нужно на случай, если колбэк-сервер недоступен и код придётся
+        # вставлять вручную. Раз колбэк отработал сам, это состояние нужно
+        # снять — иначе бот продолжит принимать ЛЮБОЕ следующее сообщение
+        # пользователя (даже «Мои ДЗ») за код авторизации и будет пытаться
+        # обменять его на токен, получая "Malformed auth code".
+        key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
+        state = FSMContext(storage=dp.storage, key=key)
+        await state.clear()
 
     async def oauth_callback(request: web.Request) -> web.Response:
         params = request.query
@@ -68,6 +82,8 @@ def setup_routes(app: web.Application, bot: Bot) -> None:
 
         if error:
             logger.info("OAuth: пользователь отклонил доступ (%s)", error)
+            if user_id:
+                await _clear_fsm_state(user_id)
             return _page(
                 "Отменено", "Доступ не предоставлен",
                 "Вы отменили авторизацию. Вернитесь в Telegram и попробуйте снова, "
@@ -85,11 +101,18 @@ def setup_routes(app: web.Application, bot: Bot) -> None:
             google_service.exchange_code_and_save(user_id, code)
         except GoogleAuthError as exc:
             logger.warning("OAuth callback: ошибка обмена кода для %s: %s", user_id, exc)
+            await _clear_fsm_state(user_id)
             try:
-                await bot.send_message(user_id, f"⚠️ Не получилось авторизоваться: {exc}")
+                await bot.send_message(
+                    user_id,
+                    f"⚠️ Не получилось авторизоваться: {exc}\n"
+                    "Нажмите «🔑 Авторизоваться в Google» ещё раз.",
+                )
             except Exception:  # noqa: BLE001
                 pass
             return _page("Ошибка", "⚠️ Не получилось авторизоваться", str(exc))
+
+        await _clear_fsm_state(user_id)
 
         try:
             await bot.send_message(

@@ -58,7 +58,7 @@ async def _start_web_app(bot: Bot, dp: Dispatcher) -> web.AppRunner:
     app = web.Application()
     app.router.add_get("/", health)
 
-    oauth_server.setup_routes(app, bot)
+    oauth_server.setup_routes(app, bot, dp)
     cron_server.setup_routes(app, bot)
 
     if config.USE_WEBHOOK:
