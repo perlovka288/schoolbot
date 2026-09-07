@@ -6,12 +6,15 @@
 from __future__ import annotations
 
 import logging
+import random
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
 from google import genai
 from google.genai import types
+from google.genai.errors import ClientError, ServerError
 from pypdf import PdfReader
 from PIL import Image
 
@@ -19,10 +22,55 @@ import config
 
 logger = logging.getLogger(__name__)
 
-_client = genai.Client(api_key=config.GEMINI_API_KEY)
+# По клиенту на каждый ключ из config.GEMINI_API_KEYS (обычно один, но
+# можно указать несколько через запятую в .env — см. config.py).
+_clients: list[genai.Client] = [genai.Client(api_key=key) for key in config.GEMINI_API_KEYS]
 
 # Простой in-memory кэш текста учебников, чтобы не парсить PDF при каждом запросе
 _books_cache: dict[str, str] | None = None
+
+# Сколько раз повторять запрос на ОДНОМ ключе, если модель временно
+# перегружена (503 UNAVAILABLE — "This model is currently experiencing
+# high demand"). Это не ошибка конфигурации, а обычная временная
+# перегрузка на стороне Google, которая обычно проходит за секунды.
+_MAX_RETRIES_PER_KEY = 2
+_RETRY_DELAY_SECONDS = 4
+
+
+def _generate_with_retry(**kwargs):
+    """Пробует все доступные ключи Gemini по очереди (в случайном порядке),
+    на каждом — несколько попыток при временной перегрузке (503/500).
+    Если у ключа кончилась квота или он невалиден (4xx) — сразу переходит
+    к следующему ключу, не тратя время на повтор того же ключа."""
+    clients_order = _clients[:]
+    random.shuffle(clients_order)
+
+    last_exc: Exception | None = None
+    for client_idx, client in enumerate(clients_order, start=1):
+        for attempt in range(1, _MAX_RETRIES_PER_KEY + 1):
+            try:
+                return client.models.generate_content(**kwargs)
+            except ServerError as exc:
+                # 503/500 — временная перегрузка модели, есть смысл повторить
+                # тем же ключом ещё раз, прежде чем переходить к следующему.
+                last_exc = exc
+                logger.warning(
+                    "Gemini API временно недоступен (ключ %d/%d, попытка %d/%d): %s",
+                    client_idx, len(clients_order), attempt, _MAX_RETRIES_PER_KEY, exc,
+                )
+                if attempt < _MAX_RETRIES_PER_KEY:
+                    time.sleep(_RETRY_DELAY_SECONDS)
+            except ClientError as exc:
+                # 4xx — например, у этого конкретного ключа кончилась квota
+                # (429) или он невалиден. Повторять тем же ключом бессмысленно,
+                # сразу пробуем следующий, если он есть.
+                last_exc = exc
+                logger.warning(
+                    "Gemini API отклонил запрос по ключу %d/%d: %s",
+                    client_idx, len(clients_order), exc,
+                )
+                break
+    raise last_exc
 
 
 @dataclass
@@ -134,7 +182,7 @@ def solve_task(
             logger.warning("Не удалось открыть изображение %s: %s", img_path, exc)
 
     try:
-        response = _client.models.generate_content(
+        response = _generate_with_retry(
             model=config.GEMINI_MODEL_NAME,
             contents=prompt_parts,
             config=types.GenerateContentConfig(
@@ -165,7 +213,7 @@ def answer_book_question(question: str) -> str:
         )
 
     try:
-        response = _client.models.generate_content(
+        response = _generate_with_retry(
             model=config.GEMINI_MODEL_NAME,
             contents=prompt,
             config=types.GenerateContentConfig(

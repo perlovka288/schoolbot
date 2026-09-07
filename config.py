@@ -30,17 +30,28 @@ DATA_ROOT.mkdir(parents=True, exist_ok=True)
 # Секреты
 # ---------------------------------------------------------------------------
 TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+
+# Можно указать несколько ключей Gemini через запятую (GEMINI_API_KEY=
+# key1,key2,key3) — например, если у вас несколько бесплатных ключей от
+# разных Google-аккаунтов. Бот будет пробовать их по очереди в случайном
+# порядке: если у одного кончилась квота/он вернул ошибку — пробует
+# следующий, а не сдаётся сразу. Один ключ (без запятых) тоже работает
+# как раньше.
 GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+GEMINI_API_KEYS: list[str] = [
+    key.strip() for key in GEMINI_API_KEY.split(",") if key.strip()
+]
 
 if not TELEGRAM_BOT_TOKEN:
     raise RuntimeError(
         "TELEGRAM_BOT_TOKEN не задан. Создайте файл .env "
         "(см. .env.example) и укажите там токен бота."
     )
-if not GEMINI_API_KEY:
+if not GEMINI_API_KEYS:
     raise RuntimeError(
         "GEMINI_API_KEY не задан. Создайте файл .env "
-        "(см. .env.example) и укажите там ключ Gemini API."
+        "(см. .env.example) и укажите там ключ Gemini API "
+        "(можно несколько через запятую)."
     )
 
 # ---------------------------------------------------------------------------
