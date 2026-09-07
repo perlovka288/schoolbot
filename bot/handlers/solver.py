@@ -19,7 +19,7 @@ from aiogram.types import Message, CallbackQuery, FSInputFile
 
 import config
 from bot.keyboards.keyboards import BTN_ASK_BOOK, main_menu_keyboard, cancel_keyboard
-from services import google_service, gemini_service, notebook_render
+from services import attachment_reader, google_service, gemini_service, notebook_render
 from services.google_service import GoogleAuthError
 
 logger = logging.getLogger(__name__)
@@ -78,14 +78,18 @@ async def solve_coursework(callback: CallbackQuery, state: FSMContext) -> None:
 
     task_dir = config.TMP_DIR / f"cw_{coursework_id}_{uuid4().hex[:8]}"
     image_paths: list[Path] = []
+    attachments_text = ""
 
     try:
         downloaded = google_service.download_material_files(
             user_id, cw_info.get("materials", []), task_dir
         )
         image_paths = [p for p in downloaded if p.suffix.lower() in IMAGE_EXTENSIONS]
-        # PDF-вложения пока не конвертируются в изображения постранично —
-        # Gemini 1.5 Flash также неплохо работает по тексту описания задания.
+        document_paths = [
+            p for p in downloaded if p.suffix.lower() in attachment_reader.DOCUMENT_EXTENSIONS
+        ]
+        if document_paths:
+            attachments_text = attachment_reader.extract_all(document_paths)
     except GoogleAuthError as exc:
         await callback.message.answer(f"⚠️ Не удалось скачать вложения: {exc}")
     finally:
@@ -96,6 +100,8 @@ async def solve_coursework(callback: CallbackQuery, state: FSMContext) -> None:
         f"Задание: {cw_info['title']}\n"
         f"Описание: {cw_info.get('description') or '(описание отсутствует)'}"
     )
+    if attachments_text:
+        task_text += f"\n\nСодержимое прикреплённых файлов:\n{attachments_text}"
 
     await _solve_and_reply(callback.message, task_text, image_paths)
 
@@ -135,6 +141,41 @@ async def ask_book_with_photo(message: Message, state: FSMContext, bot: Bot) -> 
     await _solve_and_reply(message, task_text, [img_path])
 
     img_path.unlink(missing_ok=True)
+
+
+@router.message(AskBookStates.waiting_for_question, F.document)
+async def ask_book_with_document(message: Message, state: FSMContext, bot: Bot) -> None:
+    await state.clear()
+
+    doc = message.document
+    suffix = Path(doc.file_name or "").suffix.lower()
+    if suffix not in attachment_reader.DOCUMENT_EXTENSIONS:
+        await message.answer(
+            "⚠️ Такой тип файла пока не читаю (поддерживаю PDF, PPTX, DOCX, TXT). "
+            "Пришлите текст или фото задания.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+
+    file = await bot.get_file(doc.file_id)
+    file_path = config.TMP_DIR / f"question_{uuid4().hex}{suffix}"
+    await bot.download_file(file.file_path, destination=file_path)
+
+    extracted = attachment_reader.extract_text(file_path)
+    file_path.unlink(missing_ok=True)
+
+    if not extracted:
+        await message.answer(
+            "⚠️ Не получилось извлечь текст из файла — возможно, он повреждён "
+            "или это скан без текстового слоя.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+
+    caption = message.caption or "Реши задание из приложенного файла."
+    task_text = f"{caption}\n\nСодержимое файла «{doc.file_name}»:\n{extracted}"
+
+    await _solve_and_reply(message, task_text, [])
 
 
 @router.message(AskBookStates.waiting_for_question, F.text)
