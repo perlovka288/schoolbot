@@ -35,7 +35,7 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_applicati
 from aiohttp import web
 
 import config
-from bot.handlers import start, auth, classroom, solver
+from bot.handlers import start, auth, classroom, solver, admin_books
 from services import cron_server, gemini_service, oauth_server, sync_service
 
 logging.basicConfig(
@@ -89,6 +89,7 @@ async def main() -> None:
     # Порядок важен: более специфичные роутеры (с FSM-состояниями) регистрируем
     # раньше, чтобы они успевали перехватить сообщение в нужном состоянии.
     dp.include_router(auth.router)
+    dp.include_router(admin_books.router)
     dp.include_router(solver.router)
     dp.include_router(classroom.router)
     dp.include_router(start.router)

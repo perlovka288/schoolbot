@@ -152,6 +152,16 @@ SYNC_INTERVAL_SECONDS: int = int(os.getenv("SYNC_INTERVAL_SECONDS", "60"))
 CRON_SECRET: str = os.getenv("CRON_SECRET", "")
 
 # ---------------------------------------------------------------------------
+# Админы
+# ---------------------------------------------------------------------------
+# Telegram user_id (числовые ID, не @username) через запятую — этим
+# пользователям в главном меню показывается дополнительная кнопка
+# "Загрузить учебник". Узнать свой user_id можно у @userinfobot в Telegram.
+ADMIN_IDS: set[int] = {
+    int(uid.strip()) for uid in os.getenv("ADMIN_IDS", "").split(",") if uid.strip().isdigit()
+}
+
+# ---------------------------------------------------------------------------
 # Gemini
 # ---------------------------------------------------------------------------
 GEMINI_MODEL_NAME: str = os.getenv("GEMINI_MODEL_NAME", "gemini-flash-latest")

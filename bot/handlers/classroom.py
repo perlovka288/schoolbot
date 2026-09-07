@@ -1,6 +1,7 @@
 """Просмотр курсов и актуальных домашних заданий из Google Classroom."""
 
 import logging
+from html import escape
 
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
@@ -11,6 +12,7 @@ from bot.keyboards.keyboards import (
     main_menu_keyboard,
     courses_keyboard,
     coursework_keyboard,
+    coursework_detail_keyboard,
 )
 from services import google_service
 from services.google_service import GoogleAuthError
@@ -26,7 +28,7 @@ async def show_courses(message: Message, state: FSMContext) -> None:
     if not google_service.is_authorized(user_id):
         await message.answer(
             "Сначала авторизуйтесь: нажмите «🔑 Авторизоваться в Google».",
-            reply_markup=main_menu_keyboard(),
+            reply_markup=main_menu_keyboard(user_id),
         )
         return
 
@@ -110,4 +112,44 @@ async def back_to_courses(callback: CallbackQuery, state: FSMContext) -> None:
         "Выберите курс:",
     )
     await callback.message.edit_reply_markup(reply_markup=courses_keyboard(courses))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("cw:"))
+async def show_coursework_detail(callback: CallbackQuery, state: FSMContext) -> None:
+    """Экран деталей задания: тема, описание, список вложений, кнопка «Решить»."""
+    _, course_id, coursework_id = callback.data.split(":", 2)
+
+    data = await state.get_data()
+    cw_store = data.get("courseworks", {})
+    cw_info = cw_store.get(coursework_id)
+
+    if not cw_info:
+        await callback.answer("Данные о задании устарели, откройте список заново.", show_alert=True)
+        return
+
+    materials = cw_info.get("materials", [])
+    materials_lines = [escape(line) for line in google_service.describe_materials(materials)]
+
+    text_parts = [
+        f"📌 <b>{escape(cw_info['title'])}</b>",
+        f"Курс/тема: {escape(cw_info['course_name'])}",
+    ]
+    if cw_info.get("due_date"):
+        text_parts.append(f"Срок сдачи: {escape(cw_info['due_date'])}")
+    text_parts.append("")
+    text_parts.append(f"Описание: {escape(cw_info.get('description') or '(описание отсутствует)')}")
+
+    if materials_lines:
+        text_parts.append("")
+        text_parts.append("Прикреплённые файлы:")
+        text_parts.extend(materials_lines)
+    else:
+        text_parts.append("")
+        text_parts.append("(вложений нет)")
+
+    await callback.message.edit_text(
+        "\n".join(text_parts),
+        reply_markup=coursework_detail_keyboard(course_id, coursework_id),
+    )
     await callback.answer()

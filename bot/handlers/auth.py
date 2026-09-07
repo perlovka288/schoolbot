@@ -27,7 +27,7 @@ async def start_auth(message: Message, state: FSMContext) -> None:
         await message.answer(
             "Вы уже авторизованы в Google ✅\n"
             "Если хотите переавторизоваться — сначала нажмите «🚪 Выйти из Google».",
-            reply_markup=main_menu_keyboard(),
+            reply_markup=main_menu_keyboard(user_id),
         )
         return
 
@@ -73,7 +73,7 @@ async def receive_auth_code(message: Message, state: FSMContext) -> None:
     await state.clear()
     await message.answer(
         "✅ Авторизация прошла успешно! Теперь можно смотреть домашние задания.",
-        reply_markup=main_menu_keyboard(),
+        reply_markup=main_menu_keyboard(user_id),
     )
 
 
@@ -81,5 +81,5 @@ async def receive_auth_code(message: Message, state: FSMContext) -> None:
 async def cancel_auth(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await callback.message.edit_text("Авторизация отменена.")
-    await callback.message.answer("Главное меню:", reply_markup=main_menu_keyboard())
+    await callback.message.answer("Главное меню:", reply_markup=main_menu_keyboard(callback.from_user.id))
     await callback.answer()

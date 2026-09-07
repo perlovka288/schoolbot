@@ -60,7 +60,7 @@ async def _solve_and_reply(message: Message, task_text: str, image_paths: list[P
         )
 
 
-@router.callback_query(F.data.startswith("cw:"))
+@router.callback_query(F.data.startswith("solve:"))
 async def solve_coursework(callback: CallbackQuery, state: FSMContext) -> None:
     _, course_id, coursework_id = callback.data.split(":", 2)
     user_id = callback.from_user.id
@@ -123,7 +123,7 @@ async def ask_book_start(message: Message, state: FSMContext) -> None:
 async def cancel_ask_book(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await callback.message.edit_text("Отменено.")
-    await callback.message.answer("Главное меню:", reply_markup=main_menu_keyboard())
+    await callback.message.answer("Главное меню:", reply_markup=main_menu_keyboard(callback.from_user.id))
     await callback.answer()
 
 
@@ -153,7 +153,7 @@ async def ask_book_with_document(message: Message, state: FSMContext, bot: Bot) 
         await message.answer(
             "⚠️ Такой тип файла пока не читаю (поддерживаю PDF, PPTX, DOCX, TXT). "
             "Пришлите текст или фото задания.",
-            reply_markup=main_menu_keyboard(),
+            reply_markup=main_menu_keyboard(message.from_user.id),
         )
         return
 
@@ -168,7 +168,7 @@ async def ask_book_with_document(message: Message, state: FSMContext, bot: Bot) 
         await message.answer(
             "⚠️ Не получилось извлечь текст из файла — возможно, он повреждён "
             "или это скан без текстового слоя.",
-            reply_markup=main_menu_keyboard(),
+            reply_markup=main_menu_keyboard(message.from_user.id),
         )
         return
 

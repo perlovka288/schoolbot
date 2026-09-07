@@ -55,6 +55,28 @@ class CourseWork:
     materials: list[dict]
 
 
+def describe_materials(materials: list[dict]) -> list[str]:
+    """Человекочитаемый список вложений задания (без скачивания) —
+    для показа на экране деталей задания."""
+    lines: list[str] = []
+    for m in materials:
+        if "driveFile" in m:
+            title = m["driveFile"].get("driveFile", {}).get("title", "Файл без названия")
+            lines.append(f"📎 {title}")
+        elif "link" in m:
+            title = m["link"].get("title") or m["link"].get("url", "ссылка")
+            lines.append(f"🔗 {title}")
+        elif "youtubeVideo" in m:
+            title = m["youtubeVideo"].get("title", "YouTube-видео")
+            lines.append(f"▶️ {title}")
+        elif "form" in m:
+            title = m["form"].get("title", "Google-форма")
+            lines.append(f"📝 {title}")
+        else:
+            lines.append("📎 Вложение")
+    return lines
+
+
 def _token_path(user_id: int) -> Path:
     return config.TOKENS_DIR / f"{user_id}.json"
 

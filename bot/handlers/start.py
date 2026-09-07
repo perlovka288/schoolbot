@@ -22,7 +22,7 @@ async def cmd_start(message: Message) -> None:
         "📚 Показывать актуальные домашние задания и решать их с помощью ИИ\n"
         "📖 Отвечать на вопросы по учебникам\n\n"
         "Выбери действие на клавиатуре ниже 👇",
-        reply_markup=main_menu_keyboard(),
+        reply_markup=main_menu_keyboard(message.from_user.id),
     )
 
 
@@ -32,5 +32,5 @@ async def logout_handler(message: Message) -> None:
     sync_service.clear_state(message.from_user.id)
     await message.answer(
         "Вы вышли из аккаунта Google. Токен удалён.",
-        reply_markup=main_menu_keyboard(),
+        reply_markup=main_menu_keyboard(message.from_user.id),
     )
